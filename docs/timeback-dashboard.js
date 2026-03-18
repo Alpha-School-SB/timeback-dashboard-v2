@@ -39,6 +39,7 @@
             --accent-rose: #f43f5e;
             --accent-rose-glow: rgba(244, 63, 94, 0.15);
             --accent-purple: #a855f7;
+            --accent-cyan: #06b6d4;
             --radius: 12px;
             --radius-lg: 16px;
             position: fixed;
@@ -195,13 +196,13 @@
         #tb-dash-overlay .day-tab-name { font-weight: 600; font-size: 14px; }
         #tb-dash-overlay .day-tab-xp { font-size: 11px; margin-top: 4px; opacity: 0.7; }
         #tb-dash-overlay .student-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr));
             gap: 16px; margin-bottom: 32px;
         }
         #tb-dash-overlay .student-card {
             background: var(--bg-card); backdrop-filter: blur(12px); border: 1px solid var(--border);
-            border-radius: var(--radius-lg); overflow: hidden; transition: all 0.3s;
-            animation: tb-fadeIn 0.4s ease forwards; opacity: 0;
+            border-radius: var(--radius-lg); overflow: visible; transition: all 0.3s;
+            animation: tb-fadeIn 0.4s ease forwards; opacity: 0; min-width: 0;
         }
         #tb-dash-overlay .student-card:hover {
             border-color: var(--border-hover); transform: translateY(-2px);
@@ -227,9 +228,10 @@
         #tb-dash-overlay .student-header {
             padding: 16px 20px; display: flex; align-items: center;
             justify-content: space-between; border-bottom: 1px solid var(--border);
+            flex-wrap: wrap; gap: 8px;
         }
-        #tb-dash-overlay .student-name { font-size: 16px; font-weight: 700; }
-        #tb-dash-overlay .student-badges { display: flex; gap: 8px; }
+        #tb-dash-overlay .student-name { font-size: 16px; font-weight: 700; white-space: nowrap; }
+        #tb-dash-overlay .student-badges { display: flex; gap: 8px; flex-wrap: wrap; }
         #tb-dash-overlay .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
         #tb-dash-overlay .badge-xp { background: var(--accent-blue-glow); color: var(--accent-blue); border: 1px solid rgba(59,130,246,0.2); }
         #tb-dash-overlay .badge-acc { border: 1px solid; }
@@ -242,13 +244,14 @@
         #tb-dash-overlay .subject-row {
             display: flex; align-items: center; padding: 8px 0;
             border-bottom: 1px solid rgba(255,255,255,0.03); gap: 12px;
+            flex-wrap: wrap; min-width: 0;
         }
         #tb-dash-overlay .subject-row:last-child { border-bottom: none; }
         #tb-dash-overlay .subject-row.no-data { opacity: 0.3; }
-        #tb-dash-overlay .subject-name { font-size: 13px; font-weight: 500; min-width: 110px; color: var(--text-secondary); }
-        #tb-dash-overlay .subject-metrics { display: flex; gap: 16px; flex: 1; }
-        #tb-dash-overlay .metric { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-        #tb-dash-overlay .metric-bar { width: 60px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+        #tb-dash-overlay .subject-name { font-size: 13px; font-weight: 500; min-width: 80px; max-width: 110px; color: var(--text-secondary); flex-shrink: 0; }
+        #tb-dash-overlay .subject-metrics { display: flex; gap: 12px; flex: 1; flex-wrap: wrap; align-items: center; }
+        #tb-dash-overlay .metric { display: flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+        #tb-dash-overlay .metric-bar { width: 50px; height: 4px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
         #tb-dash-overlay .metric-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
         #tb-dash-overlay .metric-bar-fill.blue { background: var(--accent-blue); }
         #tb-dash-overlay .metric-bar-fill.emerald { background: var(--accent-emerald); }
@@ -1136,8 +1139,8 @@
                 '<div class="subject-metrics">' +
                 '<div class="metric"><span class="metric-value" style="color: var(--accent-blue)">' + Math.round(subj.xp) + '</span><span class="metric-unit">XP</span></div>' +
                 '<div class="metric"><div class="metric-bar"><div class="metric-bar-fill ' + accBarColor + '" style="width:' + accWidth + '%"></div></div><span class="metric-value ' + accColor + '">' + subj.accuracy + '%</span></div>' +
-                '<div class="metric"><span class="metric-value ' + minColor + '">' + subj.minutes + '</span><span class="metric-unit">min</span></div>' +
-                (subj.mastered !== undefined ? '<div class="metric"><span class="metric-value" style="color: var(--accent-purple)">' + subj.mastered + '</span><span class="metric-unit">mastered</span></div>' : '') +
+                '<div class="metric"><span class="metric-value" style="color: var(--accent-purple)">' + subj.minutes + '</span><span class="metric-unit">min</span></div>' +
+                (subj.mastered !== undefined && subj.mastered > 0 ? '<div class="metric"><span class="metric-value" style="color: var(--accent-cyan)">' + subj.mastered + '</span><span class="metric-unit">mastered</span></div>' : '') +
                 '</div></div>';
         });
         return '<div class="student-card ' + flagClass + '">' +
