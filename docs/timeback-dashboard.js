@@ -1913,4 +1913,80 @@
 
     init();
 
+    // === API Discovery: find assessment/test endpoints ===
+    // Intercept fetch to log any assessment-related calls TimeBack makes
+    (function() {
+        var originalFetch = window.fetch;
+        window._tbOriginalFetch = originalFetch;
+        window.fetch = function() {
+            var url = arguments[0];
+            if (typeof url === 'string' && (url.indexOf('assessment') !== -1 || url.indexOf('test') !== -1 || url.indexOf('Test') !== -1)) {
+                console.log('%c[XP Tracker Discovery] Assessment-related fetch detected:', 'color: #eab308; font-weight: bold;');
+                console.log('  URL:', url);
+                if (arguments[1] && arguments[1].body) {
+                    try { console.log('  Payload:', JSON.parse(arguments[1].body)); } catch(e) { console.log('  Payload (raw):', arguments[1].body); }
+                }
+                return originalFetch.apply(this, arguments).then(function(resp) {
+                    var cloned = resp.clone();
+                    cloned.json().then(function(data) {
+                        console.log('%c[XP Tracker Discovery] Assessment response:', 'color: #eab308; font-weight: bold;');
+                        console.log(data);
+                    }).catch(function(){});
+                    return resp;
+                });
+            }
+            return originalFetch.apply(this, arguments);
+        };
+
+        // Also proactively try the most likely assessment endpoint names
+        var studentList = getStudentsFromStorage();
+        var studentIds = getStudentIds();
+        var firstStudentId = null;
+        for (var i = 0; i < studentList.length; i++) {
+            if (studentIds[studentList[i]]) { firstStudentId = studentIds[studentList[i]]; break; }
+        }
+
+        if (firstStudentId) {
+            var endpointGuesses = [
+                '/_serverFn/src_features_assessment-results_actions_getUserPendingAssessments_ts--getUserPendingAssessments_createServerFn_handler?createServerFn',
+                '/_serverFn/src_features_assessment-results_actions_getUserAssessments_ts--getUserAssessments_createServerFn_handler?createServerFn',
+                '/_serverFn/src_features_assessment-results_actions_getAssessmentResults_ts--getAssessmentResults_createServerFn_handler?createServerFn',
+            ];
+
+            var today = getLocalToday();
+            var payloadGuesses = [
+                { data: { studentId: firstStudentId }, context: {} },
+                { data: { studentId: firstStudentId, timezone: 'America/Los_Angeles' }, context: {} },
+                { data: { userId: firstStudentId }, context: {} },
+                { data: { studentId: firstStudentId, startDate: today + 'T07:00:00.000Z', endDate: today + 'T06:59:59.999Z' }, context: {} },
+            ];
+
+            console.log('%c[XP Tracker Discovery] Probing assessment endpoints for student: ' + firstStudentId, 'color: #eab308; font-weight: bold;');
+
+            endpointGuesses.forEach(function(endpoint) {
+                payloadGuesses.forEach(function(payload, pi) {
+                    if (pi > 0) return; // only try first payload per endpoint to avoid spam
+                    originalFetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    }).then(function(resp) {
+                        if (resp.ok) {
+                            return resp.json().then(function(data) {
+                                console.log('%c[XP Tracker Discovery] SUCCESS - Endpoint found!', 'color: #22c55e; font-weight: bold; font-size: 14px;');
+                                console.log('  Endpoint:', endpoint);
+                                console.log('  Payload:', payload);
+                                console.log('  Response:', data);
+                            });
+                        } else {
+                            console.log('[XP Tracker Discovery] ' + resp.status + ' from:', endpoint.split('--')[1]?.split('_')[0] || endpoint);
+                        }
+                    }).catch(function(e) {
+                        console.log('[XP Tracker Discovery] Failed:', endpoint.split('--')[1]?.split('_')[0] || endpoint, e.message);
+                    });
+                });
+            });
+        }
+    })();
+
 })();
