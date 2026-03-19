@@ -232,15 +232,23 @@ def resolve_student_id(name, cookies):
     return None
 
 
+def get_pacific_offset(date_str):
+    """Return UTC offset hours for America/Los_Angeles on a given date (7 for PDT, 8 for PST)."""
+    import zoneinfo
+    tz = zoneinfo.ZoneInfo("America/Los_Angeles")
+    dt = datetime.strptime(date_str, "%Y-%m-%d").replace(hour=12, tzinfo=tz)
+    return int(dt.utcoffset().total_seconds() / -3600)
+
+
 def fetch_activity_metrics(student_id, date_str, cookies):
     """Call getActivityMetrics API for a single student and single date."""
     # TimeBack expects UTC times for the timezone-adjusted day
-    # For America/Los_Angeles (UTC-7 in PDT): day starts at 07:00 UTC, ends at 06:59:59.999 UTC next day
+    # Dynamically determine PDT (UTC-7) vs PST (UTC-8) offset
     dt = datetime.strptime(date_str, "%Y-%m-%d")
-    # Use 7-hour offset (Pacific Time) — this matches what the frontend sends
-    start_utc = dt.strftime("%Y-%m-%dT07:00:00.000Z")
+    offset = get_pacific_offset(date_str)
+    start_utc = dt.strftime(f"%Y-%m-%dT{offset:02d}:00:00.000Z")
     end_dt = dt + timedelta(days=1)
-    end_utc = end_dt.strftime("%Y-%m-%dT06:59:59.999Z")
+    end_utc = end_dt.strftime(f"%Y-%m-%dT{offset - 1:02d}:59:59.999Z")
 
     url = f"{TIMEBACK_BASE}/_serverFn/src_features_learning-metrics_actions_getActivityMetrics_ts--getActivityMetrics_createServerFn_handler?createServerFn"
     payload = {
@@ -330,11 +338,13 @@ def scrape_single_api(date_str=None):
 
     date_str = date_str or datetime.now().strftime("%Y-%m-%d")
     today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     cookies = get_auth_cookies()
 
-    # Use cache for past dates (backfills new students automatically)
-    if date_str != today:
+    # Always re-fetch today and yesterday (yesterday's cache may be stale
+    # if it was pulled mid-day before students finished working)
+    if date_str != today and date_str != yesterday:
         cached = get_cached_day_complete(date_str, cookies)
         if cached:
             logger.info(f"Cache hit for {date_str}")
@@ -375,6 +385,7 @@ def scrape_range_api(start_date, end_date, weekdays_only=True):
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
     today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     dates = []
     current = start
@@ -389,11 +400,12 @@ def scrape_range_api(start_date, end_date, weekdays_only=True):
     cookies = get_auth_cookies()
 
     # Split into cached vs needs-fetching
+    # Always re-fetch today and yesterday (yesterday may have stale mid-day cache)
     days = []
     dates_to_fetch = []
 
     for date_str in dates:
-        if date_str != today:
+        if date_str != today and date_str != yesterday:
             cached = get_cached_day_complete(date_str, cookies)
             if cached:
                 logger.info(f"Cache hit for {date_str}")

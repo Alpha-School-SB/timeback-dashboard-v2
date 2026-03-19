@@ -730,13 +730,31 @@
         return null;
     }
 
+    function getPacificOffsetHours(dateStr) {
+        // Determine PDT (7) vs PST (8) for a given date using Intl API
+        var formatted = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Los_Angeles',
+            timeZoneName: 'short'
+        }).format(new Date(dateStr + 'T12:00:00'));
+        return formatted.includes('PDT') ? 7 : 8;
+    }
+
+    function getYesterday() {
+        var now = new Date();
+        now.setDate(now.getDate() - 1);
+        return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    }
+
     async function fetchActivityMetrics(studentId, dateStr) {
-        var startUtc = dateStr + 'T07:00:00.000Z';
+        var offset = getPacificOffsetHours(dateStr);
+        var offsetStr = String(offset).padStart(2, '0');
+        var endOffsetStr = String(offset - 1).padStart(2, '0');
+        var startUtc = dateStr + 'T' + offsetStr + ':00:00.000Z';
         var dt = new Date(dateStr + 'T00:00:00');
         var nextDay = new Date(dt);
         nextDay.setDate(nextDay.getDate() + 1);
         var nextDateStr = nextDay.getFullYear() + '-' + String(nextDay.getMonth() + 1).padStart(2, '0') + '-' + String(nextDay.getDate()).padStart(2, '0');
-        var endUtc = nextDateStr + 'T06:59:59.999Z';
+        var endUtc = nextDateStr + 'T' + endOffsetStr + ':59:59.999Z';
         var resp = await fetch('/_serverFn/src_features_learning-metrics_actions_getActivityMetrics_ts--getActivityMetrics_createServerFn_handler?createServerFn', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -808,8 +826,11 @@
         var studentList = getStudentsFromStorage();
         if (!studentList.length) return { error: 'no_students', message: 'Add students first.' };
         var today = getLocalToday();
+        var yesterday = getYesterday();
         dateStr = dateStr || today;
-        if (dateStr !== today) {
+        // Always fetch fresh for today and yesterday (yesterday's data may have been
+        // cached mid-day before students finished working)
+        if (dateStr !== today && dateStr !== yesterday) {
             var cached = getCachedDay(dateStr);
             if (cached) return { students: cached, date: dateStr, timestamp: new Date().toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }), from_cache: true };
         }
@@ -837,11 +858,13 @@
             current.setDate(current.getDate() + 1);
         }
         if (!dates.length) return { error: 'no_dates', message: 'No weekdays in the selected range.' };
+        var yesterday = getYesterday();
         var days = [];
         var datesToFetch = [];
         for (var di = 0; di < dates.length; di++) {
             var ds = dates[di];
-            if (ds !== today) {
+            // Always re-fetch today and yesterday; use cache for older dates
+            if (ds !== today && ds !== yesterday) {
                 var cached = getCachedDay(ds);
                 if (cached) {
                     days.push({ date: ds, day_name: new Date(ds + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }), students: cached });
