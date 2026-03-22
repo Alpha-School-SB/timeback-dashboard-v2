@@ -1388,17 +1388,17 @@
         } else if (type === 'week') {
             const mon = new Date(d);
             mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-            const fri = new Date(mon);
-            fri.setDate(mon.getDate() + 4);
+            const sun = new Date(mon);
+            sun.setDate(mon.getDate() + 6);
             document.getElementById('dateFrom').value = yyyy(mon);
-            document.getElementById('dateTo').value = yyyy(fri);
+            document.getElementById('dateTo').value = yyyy(sun);
         } else if (type === 'last') {
             const mon = new Date(d);
             mon.setDate(d.getDate() - (day === 0 ? 13 : day + 6));
-            const fri = new Date(mon);
-            fri.setDate(mon.getDate() + 4);
+            const sun = new Date(mon);
+            sun.setDate(mon.getDate() + 6);
             document.getElementById('dateFrom').value = yyyy(mon);
-            document.getElementById('dateTo').value = yyyy(fri);
+            document.getElementById('dateTo').value = yyyy(sun);
         }
     }
 
@@ -1419,7 +1419,7 @@
         try {
             const body = start === end
                 ? { date: start }
-                : { start, end, weekdays_only: true };
+                : { start, end, weekdays_only: false };
 
             const res = await fetch('/api/refresh', {
                 method: 'POST',

@@ -982,17 +982,17 @@
         } else if (type === 'week') {
             var mon = new Date(d);
             mon.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
-            var fri = new Date(mon);
-            fri.setDate(mon.getDate() + 4);
+            var sun = new Date(mon);
+            sun.setDate(mon.getDate() + 6);
             document.getElementById('dateFrom').value = yyyy(mon);
-            document.getElementById('dateTo').value = yyyy(fri);
+            document.getElementById('dateTo').value = yyyy(sun);
         } else if (type === 'last') {
             var mon2 = new Date(d);
             mon2.setDate(d.getDate() - (day === 0 ? 13 : day + 6));
-            var fri2 = new Date(mon2);
-            fri2.setDate(mon2.getDate() + 4);
+            var sun2 = new Date(mon2);
+            sun2.setDate(mon2.getDate() + 6);
             document.getElementById('dateFrom').value = yyyy(mon2);
-            document.getElementById('dateTo').value = yyyy(fri2);
+            document.getElementById('dateTo').value = yyyy(sun2);
         }
     }
 
@@ -1012,7 +1012,7 @@
             if (start === end) {
                 data = await scrapeSingle(start);
             } else {
-                data = await scrapeRange(start, end, true);
+                data = await scrapeRange(start, end, false);
             }
             if (data.error) {
                 alert(data.message || 'Error pulling data');
