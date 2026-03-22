@@ -776,6 +776,12 @@
         return formatted.includes('PDT') ? 7 : 8;
     }
 
+    function isWeekend(dateStr) {
+        var d = new Date(dateStr + 'T12:00:00');
+        var dow = d.getDay();
+        return dow === 0 || dow === 6;
+    }
+
     function getYesterday() {
         var now = new Date();
         now.setDate(now.getDate() - 1);
@@ -1071,7 +1077,8 @@
         filteredDays.forEach(function(day, i) {
             var totalXP = dayXPs[i];
             var activeStudents = day.students.filter(function(s) { return !(s.absent || (s.total_xp === 0 && s.total_minutes === 0 && (!s.subjects || s.subjects.length === 0))); });
-            var absentCount = day.students.length - activeStudents.length;
+            var dayIsWeekend = isWeekend(day.date);
+            var absentCount = dayIsWeekend ? 0 : day.students.length - activeStudents.length;
             var avgAcc = activeStudents.length ? Math.round(activeStudents.reduce(function(s, st) { return s + st.overall_accuracy; }, 0) / activeStudents.length) : 0;
             var barPct = Math.round((totalXP / maxXP) * 100);
             var absentTag = absentCount > 0 ? '<div style="font-size:10px;color:var(--accent-rose);margin-top:2px;">' + absentCount + ' absent</div>' : '';
@@ -1090,10 +1097,11 @@
         if (activeDay) {
             var activeDateLabel = formatDateLabel(activeDay.date);
             html += '<div class="section-header">' + activeDay.day_name + ' Summary <span class="section-date">' + activeDateLabel + '</span></div>';
-            html += renderSummaryCards(activeDay.students);
+            html += renderSummaryCards(activeDay.students, activeDay.date);
             html += '<div class="section-header">' + activeDay.day_name + ' Student Breakdown <span class="section-date">' + activeDateLabel + '</span></div>';
             html += '<div class="student-grid">';
-            activeDay.students.forEach(function(s) { html += renderStudentCard(s); });
+            var activeDayIsWeekend = isWeekend(activeDay.date);
+            activeDay.students.forEach(function(s) { html += renderStudentCard(s, activeDayIsWeekend); });
             html += '</div>';
         }
         html += renderWeeklyTrends(filteredDays);
@@ -1109,13 +1117,14 @@
     function renderDayView(main, studentsData, dateStr) {
         var filtered = getFilteredStudents(studentsData);
         var dateLabel = formatDateLabel(dateStr);
+        var dayIsWeekend = isWeekend(dateStr);
         var html = '<div class="section-header">Daily Summary <span class="section-date">' + dateLabel + '</span></div>';
-        html += renderSummaryCards(filtered);
+        html += renderSummaryCards(filtered, dateStr);
         html += '<div class="section-header">XP Leaderboard <span class="section-date">' + dateLabel + '</span></div>';
         html += renderLeaderboard(filtered);
         html += '<div class="section-header">Individual Student Breakdown <span class="section-date">' + dateLabel + '</span></div>';
         html += '<div class="student-grid">';
-        filtered.forEach(function(s) { html += renderStudentCard(s); });
+        filtered.forEach(function(s) { html += renderStudentCard(s, dayIsWeekend); });
         html += '</div>';
         main.innerHTML = html;
     }
@@ -1150,13 +1159,15 @@
         if (!days || !days.length) return '';
         var totals = {};
         days.forEach(function(day) {
+            var dayIsWeekend = isWeekend(day.date);
             day.students.forEach(function(s) {
                 if (!totals[s.name]) {
                     totals[s.name] = { name: s.name, xp: 0, minutes: 0, correct: 0, questions: 0, daysActive: 0, daysAbsent: 0 };
                 }
-                var isAbsent = s.absent || (s.total_xp === 0 && s.total_minutes === 0 && (!s.subjects || s.subjects.length === 0));
-                if (isAbsent) {
-                    totals[s.name].daysAbsent++;
+                var isNoWork = s.absent || (s.total_xp === 0 && s.total_minutes === 0 && (!s.subjects || s.subjects.length === 0));
+                if (isNoWork) {
+                    // Only count as absent on weekdays
+                    if (!dayIsWeekend) totals[s.name].daysAbsent++;
                 } else {
                     totals[s.name].xp += s.total_xp;
                     totals[s.name].minutes += s.total_minutes;
@@ -1193,10 +1204,11 @@
             '<div class="trend-panel-body" style="padding:12px 16px;">' + rows + '</div></div>';
     }
 
-    function renderSummaryCards(studentsData) {
+    function renderSummaryCards(studentsData, dateStr) {
         var n = studentsData.length;
         var active = studentsData.filter(function(s) { return !(s.absent || (s.total_xp === 0 && s.total_minutes === 0 && (!s.subjects || s.subjects.length === 0))); });
-        var absentCount = n - active.length;
+        var dayIsWeekend = dateStr ? isWeekend(dateStr) : false;
+        var absentCount = dayIsWeekend ? 0 : n - active.length;
         var totalXP = Math.round(studentsData.reduce(function(s, st) { return s + st.total_xp; }, 0));
         var avgAcc = active.length ? Math.round(active.reduce(function(s, st) { return s + st.overall_accuracy; }, 0) / active.length) : 0;
         var avgMin = active.length ? Math.round(active.reduce(function(s, st) { return s + st.total_minutes; }, 0) / active.length) : 0;
@@ -1211,13 +1223,17 @@
             '</div>';
     }
 
-    function renderStudentCard(student) {
-        var isAbsent = student.absent || (student.total_xp === 0 && student.total_minutes === 0 && (!student.subjects || student.subjects.length === 0));
-        if (isAbsent) {
-            return '<div class="student-card flag-absent">' +
+    function renderStudentCard(student, isWeekendDay) {
+        var isNoWork = student.absent || (student.total_xp === 0 && student.total_minutes === 0 && (!student.subjects || student.subjects.length === 0));
+        if (isNoWork) {
+            var bannerText = isWeekendDay
+                ? 'NO WORK COMPLETED'
+                : 'NO WORK COMPLETED &mdash; Absent';
+            var cardClass = isWeekendDay ? 'student-card' : 'student-card flag-absent';
+            return '<div class="' + cardClass + '">' +
                 '<div class="student-header"><span class="student-name">' + student.name + '</span>' +
                 '<div class="student-badges"><span class="badge badge-xp">0 XP</span><span class="badge badge-acc warn">0%</span><span class="badge badge-min warn">0 min</span></div></div>' +
-                '<div class="absent-banner"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> NO WORK COMPLETED &mdash; Absent or no activity recorded</div></div>';
+                '<div class="absent-banner"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> ' + bannerText + '</div></div>';
         }
         var accClass = student.overall_accuracy >= 80 ? 'good' : 'warn';
         var minClass = student.total_minutes >= 20 ? 'good' : 'warn';
