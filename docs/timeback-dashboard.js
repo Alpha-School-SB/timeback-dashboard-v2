@@ -290,6 +290,33 @@
         #tb-dash-overlay .subject-totals-wrapper {
             overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px;
         }
+        #tb-dash-overlay .subject-totals-table th.sortable {
+            cursor: pointer; user-select: none; position: relative; padding-right: 20px;
+        }
+        #tb-dash-overlay .subject-totals-table th.sortable:hover { color: var(--accent-blue); }
+        #tb-dash-overlay .subject-totals-table th.sortable::after {
+            content: '\u2195'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+            font-size: 10px; opacity: 0.4;
+        }
+        #tb-dash-overlay .subject-totals-table th.sort-asc::after { content: '\u2191'; opacity: 1; color: var(--accent-blue); }
+        #tb-dash-overlay .subject-totals-table th.sort-desc::after { content: '\u2193'; opacity: 1; color: var(--accent-blue); }
+        #tb-dash-overlay .export-area {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+            padding: 16px; margin-bottom: 24px;
+        }
+        #tb-dash-overlay .export-textarea {
+            width: 100%; min-height: 300px; background: rgba(0,0,0,0.3); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: 'Courier New', monospace;
+            font-size: 12px; resize: vertical; outline: none; tab-size: 8; white-space: pre; overflow-x: auto;
+        }
+        #tb-dash-overlay .export-textarea:focus { border-color: var(--accent-blue); }
+        #tb-dash-overlay .btn-copy {
+            margin-top: 10px; padding: 8px 20px; border-radius: 8px; border: none;
+            background: var(--accent-emerald); color: white; font-size: 13px;
+            font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.2s;
+        }
+        #tb-dash-overlay .btn-copy:hover { background: #059669; }
+        #tb-dash-overlay .btn-copy.copied { background: var(--accent-blue); }
         #tb-dash-overlay .subject-row:last-child { border-bottom: none; }
         #tb-dash-overlay .subject-row.no-data { opacity: 0.3; }
         #tb-dash-overlay .subject-row.has-test {
@@ -1013,7 +1040,8 @@
     var groups = [];
     var activeGroupIndex = -1;
     var activeDayIndex = 0;
-    var weeklyViewMode = 'daily'; // 'daily' or 'subjects'
+    var weeklyViewMode = 'daily'; // 'daily', 'subjects', or 'export'
+    var sortColumn = null; // { col: 'name'|subject name|'total'|'acc'|'min', dir: 'asc'|'desc' }
 
     var todayDate = new Date();
     var yyyy = function(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
@@ -1119,9 +1147,13 @@
         html += '<div class="view-toggle-bar">' +
             '<button class="view-toggle-btn ' + (weeklyViewMode === 'daily' ? 'active' : '') + '" onclick="switchWeeklyView(\'daily\')">Daily Breakdown</button>' +
             '<button class="view-toggle-btn ' + (weeklyViewMode === 'subjects' ? 'active' : '') + '" onclick="switchWeeklyView(\'subjects\')">Weekly XP by Subject</button>' +
+            '<button class="view-toggle-btn ' + (weeklyViewMode === 'export' ? 'active' : '') + '" onclick="switchWeeklyView(\'export\')">Export to Sheets</button>' +
             '</div>';
 
-        if (weeklyViewMode === 'subjects') {
+        if (weeklyViewMode === 'export') {
+            html += '<div class="section-header">Daily Subject XP Breakdown <span class="section-date">' + rangeLabel + '</span></div>';
+            html += renderWeeklyExport(filteredDays);
+        } else if (weeklyViewMode === 'subjects') {
             // Subject totals view
             html += '<div class="section-header">Weekly XP by Subject <span class="section-date">' + rangeLabel + '</span></div>';
             html += renderWeeklySubjectTotals(filteredDays);
@@ -1171,7 +1203,27 @@
 
     function switchWeeklyView(mode) {
         weeklyViewMode = mode;
+        sortColumn = null;
         if (currentData) renderDashboard(currentData);
+    }
+
+    function sortSubjectTable(col) {
+        if (sortColumn && sortColumn.col === col) {
+            sortColumn.dir = sortColumn.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortColumn = { col: col, dir: col === 'name' ? 'asc' : 'desc' };
+        }
+        if (currentData) renderDashboard(currentData);
+    }
+
+    function copyExportData() {
+        var textarea = document.getElementById('exportTextarea');
+        textarea.select();
+        document.execCommand('copy');
+        var btn = document.getElementById('btnCopy');
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
     }
 
     function renderWeeklySubjectTotals(filteredDays) {
@@ -1196,26 +1248,65 @@
         });
 
         var subjectNames = Object.keys(allSubjects).sort();
-        var studentNames = Object.keys(studentData).sort(function(a, b) {
-            var totalA = 0, totalB = 0;
-            for (var s in studentData[a]) totalA += studentData[a][s].xp;
-            for (var s2 in studentData[b]) totalB += studentData[b][s2].xp;
-            return totalB - totalA;
+
+        // Calculate totals per student for sorting
+        var studentTotals = {};
+        Object.keys(studentData).forEach(function(name) {
+            var totalXP = 0, totalMin = 0, accs = [];
+            for (var s in studentData[name]) {
+                totalXP += studentData[name][s].xp;
+                totalMin += studentData[name][s].minutes;
+                studentData[name][s].accuracy.forEach(function(a) { accs.push(a); });
+            }
+            studentTotals[name] = { xp: totalXP, min: totalMin, acc: accs.length ? Math.round(accs.reduce(function(a,b){return a+b;},0)/accs.length) : 0 };
         });
+
+        var studentNames = Object.keys(studentData);
+
+        // Apply sorting
+        if (sortColumn) {
+            studentNames.sort(function(a, b) {
+                var valA, valB;
+                if (sortColumn.col === 'name') {
+                    valA = a.toLowerCase(); valB = b.toLowerCase();
+                    return sortColumn.dir === 'asc' ? (valA < valB ? -1 : valA > valB ? 1 : 0) : (valB < valA ? -1 : valB > valA ? 1 : 0);
+                } else if (sortColumn.col === 'total') {
+                    valA = studentTotals[a].xp; valB = studentTotals[b].xp;
+                } else if (sortColumn.col === 'acc') {
+                    valA = studentTotals[a].acc; valB = studentTotals[b].acc;
+                } else if (sortColumn.col === 'min') {
+                    valA = studentTotals[a].min; valB = studentTotals[b].min;
+                } else {
+                    // Subject column
+                    valA = studentData[a][sortColumn.col] ? studentData[a][sortColumn.col].xp : 0;
+                    valB = studentData[b][sortColumn.col] ? studentData[b][sortColumn.col].xp : 0;
+                }
+                return sortColumn.dir === 'asc' ? valA - valB : valB - valA;
+            });
+        } else {
+            // Default: sort by total XP desc
+            studentNames.sort(function(a, b) { return studentTotals[b].xp - studentTotals[a].xp; });
+        }
 
         if (!subjectNames.length || !studentNames.length) return '<div style="color:var(--text-muted);text-align:center;padding:20px;">No subject data available</div>';
 
         // Build table
         var html = '<div class="subject-totals-wrapper"><table class="subject-totals-table">';
 
+        // Helper for sort class
+        function sortClass(col) {
+            if (!sortColumn || sortColumn.col !== col) return 'sortable';
+            return 'sortable sort-' + sortColumn.dir;
+        }
+
         // Header row
-        html += '<thead><tr><th>Student</th>';
+        html += '<thead><tr><th class="' + sortClass('name') + '" onclick="sortSubjectTable(\'name\')">Student</th>';
         subjectNames.forEach(function(subj) {
-            html += '<th style="text-align:center;">' + subj + '</th>';
+            html += '<th class="' + sortClass(subj) + '" style="text-align:center;" onclick="sortSubjectTable(\'' + subj.replace(/'/g, "\\'") + '\')">' + subj + '</th>';
         });
-        html += '<th style="text-align:center;">Total XP</th>';
-        html += '<th style="text-align:center;">Avg Acc</th>';
-        html += '<th style="text-align:center;">Total Min</th>';
+        html += '<th class="' + sortClass('total') + '" style="text-align:center;" onclick="sortSubjectTable(\'total\')">Total XP</th>';
+        html += '<th class="' + sortClass('acc') + '" style="text-align:center;" onclick="sortSubjectTable(\'acc\')">Avg Acc</th>';
+        html += '<th class="' + sortClass('min') + '" style="text-align:center;" onclick="sortSubjectTable(\'min\')">Total Min</th>';
         html += '</tr></thead>';
 
         // Student rows
@@ -1226,36 +1317,30 @@
 
         studentNames.forEach(function(name) {
             var data = studentData[name];
-            var rowTotalXP = 0, rowTotalMin = 0, rowAccs = [];
+            var st = studentTotals[name];
 
             html += '<tr><td class="student-name-cell">' + name + '</td>';
             subjectNames.forEach(function(subj) {
                 var d = data[subj];
                 if (d && d.xp !== 0) {
                     html += '<td class="xp-cell">' + Math.round(d.xp) + '</td>';
-                    rowTotalXP += d.xp;
-                    rowTotalMin += d.minutes;
                     subjectColTotals[subj] += d.xp;
-                    d.accuracy.forEach(function(a) { rowAccs.push(a); });
                 } else if (d) {
                     html += '<td class="xp-cell zero">0</td>';
-                    rowTotalMin += d.minutes;
-                    d.accuracy.forEach(function(a) { rowAccs.push(a); });
                 } else {
                     html += '<td class="xp-cell zero">&mdash;</td>';
                 }
             });
 
-            var avgAcc = rowAccs.length ? Math.round(rowAccs.reduce(function(a, b) { return a + b; }, 0) / rowAccs.length) : 0;
-            var accColor = avgAcc >= 80 ? 'var(--accent-emerald)' : 'var(--accent-rose)';
+            var accColor = st.acc >= 80 ? 'var(--accent-emerald)' : 'var(--accent-rose)';
 
-            html += '<td class="total-cell">' + Math.round(rowTotalXP) + '</td>';
-            html += '<td class="xp-cell" style="color:' + accColor + '">' + avgAcc + '%</td>';
-            html += '<td class="xp-cell" style="color:var(--accent-purple)">' + rowTotalMin + '</td>';
+            html += '<td class="total-cell">' + Math.round(st.xp) + '</td>';
+            html += '<td class="xp-cell" style="color:' + accColor + '">' + st.acc + '%</td>';
+            html += '<td class="xp-cell" style="color:var(--accent-purple)">' + st.min + '</td>';
             html += '</tr>';
 
-            grandTotalXP += rowTotalXP;
-            grandTotalMin += rowTotalMin;
+            grandTotalXP += st.xp;
+            grandTotalMin += st.min;
         });
 
         // Totals row
@@ -1271,6 +1356,90 @@
 
         html += '</tbody></table></div>';
         return html;
+    }
+
+    function renderWeeklyExport(filteredDays) {
+        // Build tab-separated data: Student | Subject | Mon XP | Tue XP | ... | Total XP
+        var allSubjects = {};
+        filteredDays.forEach(function(day) {
+            day.students.forEach(function(s) {
+                s.subjects.forEach(function(subj) {
+                    if (!subj.no_data) allSubjects[subj.name] = true;
+                });
+            });
+        });
+        var subjectNames = Object.keys(allSubjects).sort();
+        var studentNames = [];
+        var seen = {};
+        filteredDays.forEach(function(day) {
+            day.students.forEach(function(s) {
+                if (!seen[s.name]) { seen[s.name] = true; studentNames.push(s.name); }
+            });
+        });
+        studentNames.sort();
+
+        // Build lookup: studentData[name][date][subject] = xp
+        var studentData = {};
+        filteredDays.forEach(function(day) {
+            day.students.forEach(function(s) {
+                if (!studentData[s.name]) studentData[s.name] = {};
+                if (!studentData[s.name][day.date]) studentData[s.name][day.date] = {};
+                s.subjects.forEach(function(subj) {
+                    if (!subj.no_data) {
+                        studentData[s.name][day.date][subj.name] = subj.xp;
+                    }
+                });
+            });
+        });
+
+        var dayLabels = filteredDays.map(function(d) { return d.day_name + ' ' + d.date; });
+
+        // Header row
+        var rows = [];
+        var header = ['Student', 'Subject'];
+        dayLabels.forEach(function(dl) { header.push(dl); });
+        header.push('Weekly Total');
+        rows.push(header.join('\t'));
+
+        // Data rows: one row per student per subject
+        studentNames.forEach(function(name) {
+            subjectNames.forEach(function(subj) {
+                var row = [name, subj];
+                var total = 0;
+                filteredDays.forEach(function(day) {
+                    var xp = (studentData[name] && studentData[name][day.date] && studentData[name][day.date][subj]) || 0;
+                    row.push(Math.round(xp));
+                    total += xp;
+                });
+                row.push(Math.round(total));
+                // Only include if student had any XP in this subject
+                if (total !== 0) rows.push(row.join('\t'));
+            });
+            // Add a student total row
+            var totalRow = [name, 'TOTAL'];
+            var grandTotal = 0;
+            filteredDays.forEach(function(day) {
+                var dayTotal = 0;
+                subjectNames.forEach(function(subj) {
+                    dayTotal += (studentData[name] && studentData[name][day.date] && studentData[name][day.date][subj]) || 0;
+                });
+                totalRow.push(Math.round(dayTotal));
+                grandTotal += dayTotal;
+            });
+            totalRow.push(Math.round(grandTotal));
+            rows.push(totalRow.join('\t'));
+            rows.push(''); // blank line between students
+        });
+
+        var tsv = rows.join('\n');
+
+        return '<div class="export-area">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
+            '<div style="font-size:13px;color:var(--text-secondary);">Tab-separated data — paste directly into Google Sheets</div>' +
+            '<button class="btn-copy" id="btnCopy" onclick="copyExportData()">Copy to Clipboard</button>' +
+            '</div>' +
+            '<textarea class="export-textarea" id="exportTextarea" readonly>' + tsv + '</textarea>' +
+            '</div>';
     }
 
     function formatDateLabel(dateStr) {
@@ -2081,6 +2250,8 @@
     window.switchGroup = switchGroup;
     window.switchDay = switchDay;
     window.switchWeeklyView = switchWeeklyView;
+    window.sortSubjectTable = sortSubjectTable;
+    window.copyExportData = copyExportData;
     window.toggleChat = toggleChat;
     window.sendChat = sendChat;
 
