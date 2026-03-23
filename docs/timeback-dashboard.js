@@ -1464,13 +1464,70 @@
 
         var tsv = rows.join('\n');
 
-        return '<div class="export-area">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">' +
-            '<div style="font-size:13px;color:var(--text-secondary);">Tab-separated data — paste directly into Google Sheets</div>' +
+        // Build visual table matching the Weekly XP by Subject style
+        var shortDayLabels = filteredDays.map(function(d) {
+            var dt = new Date(d.date + 'T12:00:00');
+            return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+        });
+
+        var tableHtml = '<div class="subject-totals-wrapper"><table class="subject-totals-table">';
+        tableHtml += '<thead><tr><th>Student</th><th>Subject</th>';
+        shortDayLabels.forEach(function(dl) {
+            tableHtml += '<th style="text-align:center;">' + dl + '</th>';
+        });
+        tableHtml += '<th style="text-align:center;">Total</th></tr></thead><tbody>';
+
+        var isFirstStudent = true;
+        studentNames.forEach(function(name) {
+            if (!isFirstStudent) {
+                // Separator row between students
+                tableHtml += '<tr><td colspan="' + (shortDayLabels.length + 3) + '" style="padding:2px;border-bottom:2px solid var(--border);"></td></tr>';
+            }
+            isFirstStudent = false;
+
+            subjectNames.forEach(function(subj, si) {
+                var displayName = subj === 'Vocabulary' ? 'Vocab' : subj;
+                tableHtml += '<tr>';
+                // Only show student name on first subject row
+                if (si === 0) {
+                    tableHtml += '<td class="student-name-cell" rowspan="' + (subjectNames.length + 1) + '">' + name + '</td>';
+                }
+                tableHtml += '<td style="color:var(--text-secondary);font-size:12px;white-space:nowrap;">' + displayName + '</td>';
+                var rowTotal = 0;
+                filteredDays.forEach(function(day) {
+                    var xp = (studentData[name] && studentData[name][day.date] && studentData[name][day.date][subj]) || 0;
+                    xp = Math.round(xp);
+                    rowTotal += xp;
+                    tableHtml += '<td class="xp-cell' + (xp === 0 ? ' zero' : '') + '">' + xp + '</td>';
+                });
+                tableHtml += '<td class="total-cell">' + Math.round(rowTotal) + '</td>';
+                tableHtml += '</tr>';
+            });
+
+            // Student total row
+            tableHtml += '<tr>';
+            tableHtml += '<td style="font-weight:700;font-size:12px;color:var(--text-primary);">TOTAL</td>';
+            var grandTotal = 0;
+            filteredDays.forEach(function(day) {
+                var dayTotal = 0;
+                subjectNames.forEach(function(subj) {
+                    dayTotal += (studentData[name] && studentData[name][day.date] && studentData[name][day.date][subj]) || 0;
+                });
+                grandTotal += dayTotal;
+                tableHtml += '<td class="total-cell">' + Math.round(dayTotal) + '</td>';
+            });
+            tableHtml += '<td class="total-cell" style="font-size:15px;">' + Math.round(grandTotal) + '</td>';
+            tableHtml += '</tr>';
+        });
+
+        tableHtml += '</tbody></table></div>';
+
+        // Hidden textarea for copy
+        return '<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">' +
             '<button class="btn-copy" id="btnCopy" onclick="copyExportData()">Copy to Clipboard</button>' +
             '</div>' +
-            '<textarea class="export-textarea" id="exportTextarea" readonly>' + tsv + '</textarea>' +
-            '</div>';
+            tableHtml +
+            '<textarea id="exportTextarea" style="position:absolute;left:-9999px;opacity:0;" readonly>' + tsv + '</textarea>';
     }
 
     function formatDateLabel(dateStr) {
